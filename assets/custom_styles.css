@@ -1,0 +1,97 @@
+/* assets/custom_styles.css */
+
+/* Example: Custom styling for the main app title */
+/* 
+.main-app-title {
+    font-weight: bold;
+    color: #007BFF;
+} */
+
+
+/* Example: Add some padding to the main content area if needed */
+/*
+.content-container {
+    padding-top: 20px;
+    padding-bottom: 20px;
+}
+*/
+
+/* Styles for the sidebar */
+
+.sidebar {
+    padding: 20px;
+    background-color: #f8f9fa; /* Light grey background */
+    height: 100vh; /* Full viewport height */
+    position: sticky; /* Make it sticky */
+    top: 0; /* Stick to the top */
+    overflow-y: auto; /* Add scroll if content overflows */
+}
+
+/* Style for active NavLink */
+.sidebar .nav-link.active {
+    font-weight: bold;
+    background-color: #7e8491; /* Slightly darker background for active link */
+    border-left: 3px solid #0d6efd; /* Blue left border for active link */
+}
+
+/* 主内容容器的默认样式 */
+.content-container {
+    padding: 2rem 0; /* 设置上下内边距2rem，左右内边距0 (您可以按需调整) */
+    margin-left: 0;  /* 在小屏幕上 (当侧边栏隐藏时)，左外边距为0 */
+    transition: margin-left 0.2s ease-out; /* 可选：为边距变化添加平滑过渡效果 */
+    /* 确保内容区域能够占据剩余空间，如果父容器是flex布局，可以加上 flex-grow: 1; */
+    /* flex-grow: 1; */ /* 如果需要，可以取消注释 */
+}
+
+/* 媒体查询：当屏幕宽度大于等于768px时 (Bootstrap的 'md' 断点) */
+/* 这个断点应该与您侧边栏 d-md-block 开始生效的断点一致 */
+@media (min-width: 768px) {
+    .content-container {
+        margin-left: 20rem; /* 当侧边栏显示时，设置左外边距以腾出空间 */
+                            /* !!! 确保这里的 '20rem' 与您侧边栏的实际宽度完全一致 !!! */
+    }
+}
+
+/* (A) 为所有标签页（无论激活与否）定义一个基础外观 (可选, 用于更统一的自定义) */
+.nav-item .nav-link {
+    color: #495057; /* 未激活标签的文字颜色 */
+    background-color: #f8f9fa; /* 未激活标签的背景色 (浅灰) */
+    border: 1px solid #dee2e6; /* 边框颜色 */
+    border-bottom: none; /* 移除底部边框，形成经典标签页外观 */
+    margin-right: 2px; /* 标签之间的微小间隙 */
+    border-radius: 0.35rem 0.35rem 0 0; /* 顶部圆角 */
+    transition: background-color 0.15s ease-in-out, color 0.15s ease-in-out, border-color 0.15s ease-in-out; /* 平滑过渡效果 */
+}
+
+/* (B) 鼠标悬停在任何标签页上时的效果 */
+.nav-item .nav-link:hover {
+    background-color: #e9ecef; /* 悬停时稍深的背景色 (更浅的灰色) */
+    color: #0d6efd;             /* 悬停时文字颜色 (Bootstrap 主蓝色) */
+    /* border-color: #dee2e6 #dee2e6 #0d6efd; */ /* 可选：悬停时改变边框颜色 */
+}
+
+/* (C) 当前已选中的 (active) 标签页的突出显示样式 */
+.nav-item .nav-link.active {
+    background-color: #0d6efd; /* 激活标签的背景色 (Bootstrap 主蓝色) */
+    color: white;              /* 激活标签的文字颜色 (白色) */
+    border-color: #0d6efd #0d6efd #0d6efd; /* 边框颜色与背景色一致 */
+    font-weight: bold;         /* 激活标签的文字加粗 */
+}
+
+/* (D) 可选：当鼠标悬停在已激活的标签页上时的细微效果 */
+/* 如果不设置这个，已激活标签在悬停时会采用 (B) 中的通用悬停样式 */
+.nav-item .nav-link.active:hover {
+    background-color: #0b5ed7; /* 激活标签悬停时，背景色稍微变深一点 */
+    color: white;
+    border-color: #0a58ca;
+}
+
+/* === 强化 Card 默认样式 === */
+.card {
+    border: 1px solid #dee2e6;    /* Bootstrap 默认浅灰边框 */
+    border-radius: 0.25rem;       /* 圆角 */
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.05);  /* 轻微阴影 */
+    background-color: #ffffff;    /* 白色背景 */
+    padding: 1rem;                /* 内边距（也可用 className 控制） */
+    margin-bottom: 1rem;          /* 与下一个元素的间距 */
+}

@@ -1,0 +1,8 @@
+# pip install -r requirements.txt
+dash>=2.17.0
+dash-bootstrap-components>=1.6.0
+pandas>=2.0.0
+# psycopg2-binary  # For PostgreSQL connection, uncomment if you'll use psycopg2 directly
+# sqlalchemy       # For PostgreSQL connection, uncomment if you'll use SQLAlchemy
+dotenv
+dash-leaflet
