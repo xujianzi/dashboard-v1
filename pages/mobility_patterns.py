@@ -52,7 +52,7 @@ def render_mobility_data_table_tab(active_tab):
     if active_tab == "mobility-tab-data-table":
         # query_mobility_data = "SELECT * FROM mobility_data_table LIMIT 100;"
         # df_mobility = fetch_data(query_mobility_data)
-        df_mobility = fetch_data("SELECT * FROM mobility_data_table LIMIT 10;") # Using mock
+        # df_mobility = fetch_data("SELECT * FROM mobility_data_table LIMIT 10;") # Using mock
 
         if not df_mobility.empty:
             pass

@@ -44,7 +44,7 @@ ALL_COLUMNS_FROM_SCHEMA = [
     "pct_professinal", "pct_service", "lat", "lng", "geom"
 ] # 从您的建表语句中获取
 
-FIXED_DISPLAY_COLUMNS = ['id', 'state', 'zipcode', 'year'] # 这些列总是显示且不可选
+FIXED_DISPLAY_COLUMNS = ['id', 'state', 'zipcode', 'year', 'city'] # 这些列总是显示且不可选
 EXCLUDED_COLUMNS = ['geom', "lat", "lng"] # 这些列不参与选择和显示
 
 # 计算可选列 (从所有列中排除固定列和特定排除列)
@@ -98,93 +98,93 @@ except json.JSONDecodeError:
 
 def layout():
     # --- 列选择卡片 ---
-    column_selection_card = dbc.Card([
-        dbc.CardHeader("Select Data Columns"),
+    filter_and_column_card  = dbc.Card([
+        dbc.CardHeader("Data Filters & Column Selection"),
         dbc.CardBody([
+            # --- 新增筛选器 ---
+            dbc.Label("Filter Data By:", className="fw-bold"),
+            dbc.Row([
+                dbc.Col(dbc.Label("Year(s):"), width=12, sm=2, className="text-sm-end"),
+                dbc.Col(
+                    dcc.Dropdown(
+                        id='acs-year-filter-dropdown',
+                        options=[{'label': str(y), 'value': y} for y in range(2016, 2023 + 1)], # 2016 到 2023
+                        multi=True,
+                        placeholder="Select year(s)..."
+                    ),
+                    sm=10
+                )
+            ], className="mb-2 align-items-center"),
+            dbc.Row([
+                dbc.Col(dbc.Label("State(s):"), width=12, sm=2, className="text-sm-end"),
+                dbc.Col(
+                    dcc.Dropdown(id='acs-state-filter-dropdown', multi=True, placeholder="Select state(s)..."),
+                    sm=10
+                )
+            ], className="mb-2 align-items-center"),
+            dbc.Row([
+                dbc.Col(dbc.Label("City(ies):"), width=12, sm=2, className="text-sm-end"),
+                dbc.Col(
+                    dcc.Dropdown(
+                        id='acs-city-filter-dropdown', 
+                        multi=True, 
+                        searchable=True,
+                        placeholder="Select city(ies) (up to 1000 shown)..."),
+                        sm=10
+                )
+            ], className="mb-3 align-items-center"),
+            html.Hr(),
+
+            # --- 列选择 (与之前类似) ---
+            dbc.Label("Select Columns for Table:", className="fw-bold"),
             dbc.Row([
                 dbc.Col(
-                    dbc.Checkbox(
-                        id="acs-select-all-columns-checkbox",
-                        label="Select All",
-                        value=True # 默认全选
-                    ),
-                    width=12, # 让它占据整行，或 "auto"
-                    className="mb-2 fw-bold" # 加粗并添加底部边距
+                    dbc.Checkbox(id="acs-select-all-columns-checkbox", label="Select All Displayable Variables", value=True),
+                    width=12, className="mb-2"
                 ),
             ]),
-            html.Hr(), # 分隔线
-            dbc.Label("Choose ACS Variables:"),
             dbc.DropdownMenu(
-                label="Select Columns from List...",
-                id="acs-column-select-dropdown",
-                color="light", # 下拉按钮的颜色
-                className="mb-3 d-block", # d-block使其占据全部可用宽度
+                label="Choose Variables from List...",
+                id="acs-column-select-dropdown", # 这个ID似乎没在回调中使用，主要是视觉容器
+                color="light", className="mb-3 d-block",
                 children=[
-                    # 这个html.Div将作为下拉菜单的内容区域，并容纳动态生成的复选框网格
-                    # 为其添加内边距和滚动条
                     html.Div(
-                        id="acs-individual-column-checkboxes-container", # ID保持，但现在它在Dropdown内
-                        style={"padding": "1rem", "maxHeight": "300px", "overflowY": "auto", "minWidth": "350px"}
+                        id="acs-individual-column-checkboxes-container", # 复选框会在这里生成
+                        style={"padding": "1rem", "maxHeight": "250px", "overflowY": "auto", "minWidth": "300px"}
                     )
                 ],
-                # direction="down", # 默认向下
             ),
-            dbc.Button("Apply Column Selection", id="acs-apply-columns-button", color="primary", n_clicks=0)
+            html.Div(
+                dbc.Button("Apply Filters & Columns", id="acs-apply-button", color="primary", n_clicks=0, className="w-100"),
+                className="d-grid gap-2" # 使按钮占据全部宽度
+            )
         ])
     ], className="mb-4")
 
-    # map_selection_card = dbc.Card(
-    #     dbc.CardBody([
-    #         dbc.Row([
-    #             dbc.Col(dbc.Label("Select Variable to Display on Map:"), width="auto", className="me-2"),
-    #             dbc.Col(
-    #                 dcc.Dropdown(
-    #                     id='acs-map-variable-dropdown',
-    #                     options=MAP_VARIABLE_OPTIONS,
-    #                     value=DEFAULT_MAP_VARIABLE, # 默认选中的变量
-    #                     clearable=False,
-    #                     style={'width': '100%'}
-    #                 ),
-    #                 md=6, # 下拉菜单占据的宽度
-    #                 lg=4
-    #             ),
-    #         ], align="center", className="mb-0") # 移除了mb-3，让卡片更紧凑
-    #     ]),
-    #     className="mb-3" # 变量选择卡片底部的边距
-    # ),
-    # --- 标签页定义 (内容包裹在Card中，与之前一致) ---
     tabs_component = dbc.Tabs(
         [
             dbc.Tab(label="Data Table", tab_id="acs-tab-data-table", children=[
                 
                 dbc.Card(dbc.CardBody([
-                    column_selection_card,
-                    html.Hr(),
-                    html.Div([
+                    filter_and_column_card,
+                    #html.Hr(),
+                    html.Div([ # 下载按钮和表格的容器
                         dbc.Button(
-                            "Download Selected Data (CSV)",
-                            id="acs-download-button",
-                            color="success",
-                            className="mt-2 mb-3"
+                            "Download Selected Data (CSV)", id="acs-download-button",
+                            color="success", className="mt-2 mb-3"
                         ),
                         dcc.Download(id="acs-download-dataframe"),
                         dbc.Spinner(
-                            html.Div( # 用于包裹 DataTable 的 Div
+                            html.Div( # DataTable 的包裹 Div
                                 dash_table.DataTable(
                                     id='acs-datatable',
-                                    columns=[{"name": col.replace("pct_", "% ").replace("_", " ").title(), "id": col} for col in DEFAULT_SELECTED_COLUMNS],
-                                    data=[],
-                                    page_action='custom',
-                                    page_current=0,
-                                    page_size=PAGE_SIZE_DT,
-                                    sort_action='custom',
-                                    sort_mode='multi',
-                                    sort_by=[],
+                                    # columns, data 等将由回调填充
+                                    page_action='custom', page_current=0, page_size=PAGE_SIZE_DT,
+                                    sort_action='custom', sort_mode='multi', sort_by=[],
                                     style_table={'overflowX': 'auto'},
                                     style_cell={
                                         'minWidth': '100px', 'width': '150px', 'maxWidth': '180px',
-                                        'overflow': 'hidden',
-                                        'textOverflow': 'ellipsis',
+                                        'overflow': 'hidden', 'textOverflow': 'ellipsis',
                                         'textAlign': 'left', 'padding': '5px'
                                     },
                                     style_header={
@@ -193,8 +193,7 @@ def layout():
                                     },
                                     style_data={'border': '1px solid grey'},
                                 ),
-                                className="mt-0"
-                            )
+                            ) # DataTable 包裹 Div 不需要 className="mt-0" 了，由父级控制
                         )
                     ])
                 ]))
@@ -255,7 +254,7 @@ def layout():
     return dbc.Container(
         [
             dcc.Store(id='acs-selected-columns-store', data=DEFAULT_SELECTED_COLUMNS),
-            # column_selection_card,
+            dcc.Store(id='applied-filters-store', data={'years': [], 'states': [], 'cities': []}), # 新增Store存储筛选条件
             tabs_component
         ],
         fluid=True,
@@ -265,6 +264,49 @@ def layout():
 #     "id", "state", "zipcode", "year", "population", "median_income",
 #     "pct_bachelor", "pct_below_poverty", "pct_unemployed", "per_capita_income"
 # ]
+# 增回调函数来填充筛选器选项
+@callback(
+    Output('acs-state-filter-dropdown', 'options'),
+    Input('acs-page-tabs', 'active_tab') # 确保仅在相关标签页加载时触发
+)
+def populate_state_dropdown_options(active_tab):
+    if active_tab == 'acs-tab-data-table':
+        try:
+            # 改用新的表名 acs_data_all
+            df_states = fetch_data("SELECT DISTINCT state FROM public.acs_data_all WHERE state IS NOT NULL ORDER BY state;")
+            if df_states is not None and not df_states.empty:
+                return [{'label': str(s), 'value': str(s)} for s in df_states['state']]
+        except Exception as e:
+            print(f"Error populating state filter options: {e}")
+    return []
+
+@callback(
+    Output('acs-city-filter-dropdown', 'options'),
+    [Input('acs-page-tabs', 'active_tab'),
+     Input('acs-state-filter-dropdown', 'value')] # 级联：根据选中的州更新城市列表
+)
+def populate_city_dropdown_options(active_tab, selected_states):
+    if active_tab == 'acs-tab-data-table':
+        try:
+            query = "SELECT DISTINCT city FROM public.acs_data_all WHERE city IS NOT NULL"
+            if selected_states: # 如果选择了州，则根据州筛选城市
+                # 构建 state IN ('state1', 'state2') 格式的SQL查询条件
+                # 注意SQL注入风险，确保 selected_states 中的值是安全的或来自预定义列表
+                safe_states_tuple = tuple(str(s).replace("'", "''") for s in selected_states) # 基本的SQL注入防范
+                if len(safe_states_tuple) == 1:
+                    query += f" AND state = '{safe_states_tuple[0]}'"
+                else:
+                    query += f" AND state IN {str(safe_states_tuple)}"
+            
+            # query += " ORDER BY city LIMIT 500;" # 限制城市数量以避免下拉列表过长
+            query += " ORDER BY city;"
+            
+            df_cities = fetch_data(query)
+            if df_cities is not None and not df_cities.empty:
+                return [{'label': str(c), 'value': str(c)} for c in df_cities['city']]
+        except Exception as e:
+            print(f"Error populating city filter options: {e}")
+    return []
 
 @callback(
     Output('acs-individual-column-checkboxes-container', 'children'),
@@ -302,166 +344,175 @@ def generate_column_checkboxes_in_dropdown(select_all_checked):
 
     return checkbox_rows
 
-# 回调2: "Apply Column Selection" 按钮点击事件
+# 回调2: "修改“应用”按钮的回调函数, 此回调现在将同时处理筛选器和列选择。
 @callback(
-    Output('acs-selected-columns-store', 'data'),
-    [Input('acs-apply-columns-button', 'n_clicks')],
+    [Output('acs-selected-columns-store', 'data'),  # 存储选中的列
+     Output('applied-filters-store', 'data')],      # 存储应用的筛选器
+    [Input('acs-apply-button', 'n_clicks')],        # ID 已更改
     [State('acs-select-all-columns-checkbox', 'value'),
-     State({'type': 'acs-dynamic-column-checkbox', 'index': dash.ALL}, 'id'), # 获取所有动态复选框的ID
-     State({'type': 'acs-dynamic-column-checkbox', 'index': dash.ALL}, 'value')], # 获取所有动态复选框的value
-    prevent_initial_call=True # 只有点击按钮时才执行
+     State({'type': 'acs-dynamic-column-checkbox', 'index': dash.ALL}, 'id'),
+     State({'type': 'acs-dynamic-column-checkbox', 'index': dash.ALL}, 'value'),
+     State('acs-year-filter-dropdown', 'value'),    # 新增 State
+     State('acs-state-filter-dropdown', 'value'),   # 新增 State
+     State('acs-city-filter-dropdown', 'value')]    # 新增 State
 )
-def update_selected_columns_store(n_clicks, select_all_checked, individual_cb_ids, individual_cb_values):
+def update_stores_on_apply(n_clicks,
+                           select_all_cols_checked, individual_cb_ids, individual_cb_values,
+                           selected_years, selected_states, selected_cities):
     if not n_clicks or n_clicks == 0:
-        return dash.no_update
+        return dash.no_update, dash.no_update
 
-    selected_cols_final = list(FIXED_DISPLAY_COLUMNS) # 始终包含固定列
-
-    if select_all_checked:
+    # --- 处理列选择 (与之前的 update_selected_columns_store 逻辑相同) ---
+    selected_cols_final = list(FIXED_DISPLAY_COLUMNS)
+    if select_all_cols_checked:
         selected_cols_final.extend(POSSIBLE_SELECTABLE_COLUMNS)
     else:
-        # 遍历所有动态生成的复选框的状态
-        if individual_cb_ids and individual_cb_values: # 确保列表不为空
+        if individual_cb_ids and individual_cb_values:
             for i, cb_id_dict in enumerate(individual_cb_ids):
                 column_name = cb_id_dict['index']
-                if individual_cb_values[i]: # 如果该复选框被选中
-                    if column_name not in selected_cols_final:
-                        selected_cols_final.append(column_name)
+                if individual_cb_values[i] and column_name not in selected_cols_final:
+                    selected_cols_final.append(column_name)
+    # 去重
+    final_columns_for_store = list(dict.fromkeys(selected_cols_final))
 
-    # 去重并保持顺序 (主要是为了POSSIBLE_SELECTABLE_COLUMNS部分)
-    seen = set(FIXED_DISPLAY_COLUMNS)
-    unique_selectable = []
-    if select_all_checked:
-        for col in POSSIBLE_SELECTABLE_COLUMNS:
-            if col not in seen:
-                unique_selectable.append(col)
-                seen.add(col)
-    else:
-        if individual_cb_values and individual_cb_ids:
-             for i, cb_id_dict in enumerate(individual_cb_ids):
-                column_name = cb_id_dict['index']
-                if individual_cb_values[i]:
-                     if column_name not in seen:
-                        unique_selectable.append(column_name)
-                        seen.add(column_name)
 
-    return FIXED_DISPLAY_COLUMNS + unique_selectable
+    # --- 处理筛选条件 ---
+    filters_data = {
+        'years': selected_years if selected_years else [], #确保是列表
+        'states': selected_states if selected_states else [],
+        'cities': selected_cities if selected_cities else []
+    }
 
+    return final_columns_for_store, filters_data
+
+# --- 辅助函数：构建WHERE子句 ---
+def build_where_clause(filters_dict):
+    conditions = ["1=1"] # 始终为真，方便后续AND连接
+    # params = {} # 如果使用参数化查询
+
+    if filters_dict.get('years'):
+        year_list = filters_dict['years']
+        if year_list:
+            year_tuple = tuple(map(int, year_list)) # 年份是整数
+            if len(year_tuple) == 1:
+                conditions.append(f"\"year\" = {year_tuple[0]}")
+            else:
+                conditions.append(f"\"year\" IN {year_tuple}")
+    
+    if filters_dict.get('states'):
+        state_list = filters_dict['states']
+        if state_list:
+            # 对字符串列表进行处理以适配SQL IN子句，并做基本SQL注入防范
+            safe_state_list = [str(s).replace("'", "''") for s in state_list]
+            state_tuple_sql = "('" + "', '".join(safe_state_list) + "')"
+            conditions.append(f"\"state\" IN {state_tuple_sql}")
+
+    if filters_dict.get('cities'):
+        city_list = filters_dict['cities']
+        if city_list:
+            safe_city_list = [str(c).replace("'", "''") for c in city_list]
+            city_tuple_sql = "('" + "', '".join(safe_city_list) + "')"
+            conditions.append(f"\"city\" IN {city_tuple_sql}")
+            
+    return " AND ".join(conditions)
 
 # 回调3: 更新 DataTable (监听列选择、分页、排序、标签页激活)
+# --- 更新 DataTable 的回调 ---
 @callback(
     [Output('acs-datatable', 'data'),
      Output('acs-datatable', 'page_count'),
      Output('acs-datatable', 'columns')],
-    [Input('acs-page-tabs', 'active_tab'), # 当Data Table标签页被激活时
+    [Input('acs-page-tabs', 'active_tab'),
      Input('acs-datatable', 'page_current'),
      Input('acs-datatable', 'page_size'),
      Input('acs-datatable', 'sort_by'),
-     Input('acs-selected-columns-store', 'data')] # 当选择的列更新时
+     Input('acs-selected-columns-store', 'data'), # 列选择
+     Input('applied-filters-store', 'data')]      # 新增：筛选条件
 )
-def update_datatable_data(active_tab_id, page_current, page_size, sort_by, selected_columns_from_store):
-    ctx = dash.callback_context
-    triggered_id = ctx.triggered[0]['prop_id'].split('.')[0] if ctx.triggered else None
-
-    # 设定一个默认的列列表，以防 selected_columns_from_store 为空或 None
-    # （例如，在应用刚加载，"Apply"按钮还未被点击，且Store未被正确初始化时）
-    selected_columns = selected_columns_from_store
-    if not selected_columns:
-        selected_columns = DEFAULT_SELECTED_COLUMNS # 使用默认的全选列
-
-    # 定义DataTable的列结构
+def update_datatable_data(active_tab_id, page_current, page_size, sort_by, 
+                          selected_columns_from_store, applied_filters):
+    # ... (selected_columns 和 datatable_columns 的处理与之前类似) ...
+    selected_columns = selected_columns_from_store if selected_columns_from_store else DEFAULT_SELECTED_COLUMNS
     datatable_columns = [{"name": col.replace("pct_", "% ").replace("_", " ").title(), "id": col} for col in selected_columns]
 
     if active_tab_id != "acs-tab-data-table":
-        return [], 1, datatable_columns # 返回空数据和默认分页，但保持列结构
-
-    # 1. 获取总行数
-    # TODO: 如果未来加入基于列内容的筛选，这里的COUNT(*)也需要相应调整
-    count_query = "SELECT COUNT(*) FROM public.acs_data;"
-    df_count = fetch_data(count_query)
-
-    if df_count is None or df_count.empty:
         return [], 1, datatable_columns
-    total_rows = df_count.iloc[0,0]
 
+    current_filters = applied_filters if applied_filters else {}
+    print(f"DEBUG: Applied filters received by DataTable callback: {current_filters}") # 打印应用的筛选器
+    # 构建 WHERE 子句
+    where_clause = build_where_clause(applied_filters if applied_filters else {})
+
+    # 1. 获取总行数 (基于筛选条件)
+    count_query = f"SELECT COUNT(*) FROM public.acs_data_all WHERE {where_clause};"
+
+    print(f"DEBUG: DataTable COUNT Query SQL: {count_query}") # <--- 打印COUNT查询
+
+    df_count = fetch_data(count_query)
+    # ... (处理 df_count 为空或 total_rows 为0的情况，与之前类似) ...
+    total_rows = df_count.iloc[0,0] if df_count is not None and not df_count.empty else 0
     if total_rows == 0:
         return [], 1, datatable_columns
 
     page_count = math.ceil(total_rows / page_size) if page_size > 0 else 1
-
-    # 确保 page_current 在有效范围内
-    page_current = max(0, min(page_current, page_count -1 if page_count > 0 else 0) )
-
-
-    # 2. 构建数据查询SQL (包括排序和分页)
+    page_current = max(0, min(page_current, page_count - 1 if page_count > 0 else 0))
     offset = page_current * page_size
 
-    order_by_clause = "ORDER BY \"year\" DESC, \"state\" ASC, \"zipcode\" ASC" # 默认排序，注意列名加引号
-    if sort_by:
-        orders = []
-        for s_col in sort_by:
-            col_name = s_col['column_id']
-            direction = "DESC" if s_col['direction'] == 'desc' else "ASC"
-            if col_name in selected_columns: # 确保只按选中的列排序
-                orders.append(f'"{col_name}" {direction}') # 给列名加引号以防关键字或特殊字符
-        if orders:
-            order_by_clause = "ORDER BY " + ", ".join(orders)
-
-    # 确保选中的列名在SQL中是安全的 (例如，通过加引号)
+    # 2. 构建数据查询SQL (包括排序、分页和筛选)
+    order_by_clause = "ORDER BY \"year\" DESC, \"state\" ASC, \"zipcode\" ASC" # 默认
+    if sort_by: # 处理排序
+        orders = [f'"{s_col["column_id"]}" {"DESC" if s_col["direction"] == "desc" else "ASC"}' 
+                  for s_col in sort_by if s_col["column_id"] in selected_columns]
+        if orders: order_by_clause = "ORDER BY " + ", ".join(orders)
+    
     safe_selected_columns_sql = ", ".join([f'"{col}"' for col in selected_columns])
-    if not safe_selected_columns_sql: # 如果没有可选列（不应该发生，因为有固定列）
-        safe_selected_columns_sql = ", ".join([f'"{col}"' for col in FIXED_DISPLAY_COLUMNS])
-
+    if not safe_selected_columns_sql: safe_selected_columns_sql = ", ".join([f'"{col}"' for col in FIXED_DISPLAY_COLUMNS])
 
     data_query = f"""
         SELECT {safe_selected_columns_sql}
-        FROM public.acs_data
+        FROM public.acs_data_all
+        WHERE {where_clause}
         {order_by_clause}
         LIMIT {page_size} OFFSET {offset};
     """
+    print(f"DEBUG: DataTable DATA Query SQL: {data_query}") # <--- 打印数据获取查询
     df_page_data = fetch_data(data_query)
-
-    data_for_datatable = []
-    if df_page_data is not None and not df_page_data.empty:
-        data_for_datatable = df_page_data.to_dict('records')
-    elif total_rows > 0 : # 有数据但是当前页没取到（例如页码超出），返回空，让用户知道
-        pass # data_for_datatable 已经是 []
-
+    # ... (处理 df_page_data 和返回 data_for_datatable, page_count, datatable_columns) ...
+    data_for_datatable = df_page_data.to_dict('records') if df_page_data is not None and not df_page_data.empty else []
     return data_for_datatable, page_count, datatable_columns
 
-
 # 回调4: 下载数据 (监听下载按钮和选择的列)
+# --- 下载数据的回调 ---
 @callback(
     Output("acs-download-dataframe", "data"),
     [Input("acs-download-button", "n_clicks")],
-    [State("acs-selected-columns-store", "data")], # 使用 State 获取当前选中的列
+    [State("acs-selected-columns-store", "data"),
+     State("applied-filters-store", "data")], # 新增 State
     prevent_initial_call=True,
 )
-def download_acs_dataset(n_clicks, selected_columns_for_download):
-    if not n_clicks:
-        return dash.no_update
+def download_acs_dataset(n_clicks, selected_columns_for_download, applied_filters_for_download):
+    if not n_clicks: return dash.no_update
 
-    columns_to_download = selected_columns_for_download
-    if not columns_to_download: # 如果store为空，则下载所有默认列
-        columns_to_download = DEFAULT_SELECTED_COLUMNS
+    columns_to_download = selected_columns_for_download if selected_columns_for_download else DEFAULT_SELECTED_COLUMNS
+    safe_columns_sql = ", ".join([f'"{col}"' for col in columns_to_download])
+    if not safe_columns_sql: return dash.no_update
 
-    safe_columns_for_download_sql = ", ".join([f'"{col}"' for col in columns_to_download])
-    if not safe_columns_for_download_sql:
-        return dash.no_update # 不下载空数据
+    where_clause_download = build_where_clause(applied_filters_for_download if applied_filters_for_download else {})
 
-    query_all_acs_data = f"""
-        SELECT {safe_columns_for_download_sql}
-        FROM public.acs_data
+    query_all_data = f"""
+        SELECT {safe_columns_sql}
+        FROM public.acs_data_all
+        WHERE {where_clause_download}
         ORDER BY "year" DESC, "state" ASC, "zipcode" ASC;
     """
-    df_all_acs = fetch_data(query_all_acs_data)
+    df_all_data = fetch_data(query_all_data)
+    # ... (处理 df_all_data 为空的情况) ...
+    if df_all_data is None or df_all_data.empty:
+        print("Download: No data to download.")
+        return dash.no_update # 或者可以下载一个空文件或提示信息
 
-    if df_all_acs is None or df_all_acs.empty:
-        print("Download request: No data to download or error fetching data.")
-        # 可以考虑给用户一个提示，例如通过 dbc.Alert
-        return dash.no_update
+    return dcc.send_data_frame(df_all_data.to_csv, f"acs_filtered_data.csv", index=False)
 
-    return dcc.send_data_frame(df_all_acs.to_csv, f"acs_data_selected_columns.csv", index=False)
 
 
 # 回调5: 更新地图 (监听标签页激活)
