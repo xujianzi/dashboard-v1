@@ -95,3 +95,46 @@
     padding: 1rem;                /* 内边距（也可用 className 控制） */
     margin-bottom: 1rem;          /* 与下一个元素的间距 */
 }
+
+.custom-gradient-button {
+    background-image: linear-gradient(to right, #6278F5 0%, #39B5A4 51%, #6278F5 100%); /* 示例渐变色，请根据图片调整 */
+    /* 如果想要更简单的双色渐变，可以尝试:
+       background-image: linear-gradient(to right, #5e7cea, #44c4b8);
+    */
+    margin: 5px 0; /* 可选：按钮之间的默认上下外边距 */
+    padding: 10px 25px;    /* 按钮内边距：上下10px，左右25px */
+    text-align: center;
+    text-transform: none;  /* 文本不大写，与图片一致 */
+    transition: 0.4s;      /* 过渡效果，使悬停更平滑 */
+    background-size: 200% auto; /* 用于悬停时的背景动画 */
+    color: white;          /* 文字颜色 */
+    border-radius: 25px;   /* 大圆角 */
+    border: none;          /* 移除默认边框 */
+    box-shadow: 0 2px 6px rgba(0,0,0,0.15); /* 轻微的阴影效果 */
+    font-weight: 600;      /* 字体稍粗 (semi-bold) */
+    cursor: pointer;       /* 鼠标悬停时显示手型指针 */
+    display: inline-block; /* 使按钮可以设置padding/margin并与其他元素同行 */
+    outline: none;         /* 移除浏览器默认的焦点轮廓 */
+    letter-spacing: 0.5px; /* 轻微增加字间距 */
+    font-size: 0.95rem;    /* 按钮字体大小，可调整 */
+}
+
+.custom-gradient-button:hover {
+    background-position: right center; /* 改变渐变位置以产生动画效果 */
+    color: #fff;
+    text-decoration: none;
+    box-shadow: 0 4px 10px rgba(0,0,0,0.2); /* 悬停时阴影加深 */
+}
+
+.custom-gradient-button:active {
+    background-position: right center; /* 或其他点击效果 */
+    box-shadow: 0 2px 5px rgba(0,0,0,0.1);
+    transform: translateY(1px); /* 轻微的按下效果 */
+}
+
+/* 移除Bootstrap按钮在获得焦点时的默认外发光效果，如果不需要的话 */
+.custom-gradient-button:focus,
+.custom-gradient-button.focus {
+    outline: none;
+    box-shadow: 0 2px 6px rgba(0,0,0,0.15); /* 保持正常阴影或定义特定的焦点阴影 */
+}

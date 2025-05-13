@@ -65,14 +65,14 @@ def enrich_with_zip_info(df: pd.DataFrame, zip_info_path: str) -> pd.DataFrame:
     zip_info = pd.read_csv(zip_info_path)
     zip_info.columns = zip_info.columns.str.lower()
     
-    if not {'zip', 'city', 'state'}.issubset(zip_info.columns):
+    if not {'zip', 'county', 'city', 'state'}.issubset(zip_info.columns):
         raise ValueError("ZIP 映射表必须包含 'zip', 'city', 'state' 字段")
 
     zip_info['zip'] = zip_info['zip'].astype(str)
     df['zipcode'] = df['zipcode'].astype(str)
 
     # 合并
-    df = df.merge(zip_info[['zip', 'city', 'state']], left_on='zipcode', right_on='zip', how='left')
+    df = df.merge(zip_info[['zip', 'county', 'city', 'state']], left_on='zipcode', right_on='zip', how='left')
     df.drop(columns=['zip'], inplace=True)
 
     return df
@@ -172,7 +172,7 @@ def calculate_custom_variables(df_raw: pd.DataFrame, df_def: pd.DataFrame) -> pd
 
 def clean_and_rename_columns(df: pd.DataFrame, df_def: pd.DataFrame) -> pd.DataFrame:
     """重命名列并标准化字段格式。"""
-    geo_cols = ['state', 'city', 'zipcode']
+    geo_cols = ['state', 'county', 'city', 'zipcode']
     custom_vars = df_def['Definition'].tolist()
     df = df[geo_cols + custom_vars]
     # df = df.rename(columns={'zip code tabulation area': 'zipcode'})
@@ -224,6 +224,7 @@ def write_df_to_postgres(df, table_name, db_url):
     dtype = {
         'zipcode': Text(),
         'state': Text(),
+        'county': Text(),
         'city': Text(),
         'year': Integer(),
         'population': Integer(),
