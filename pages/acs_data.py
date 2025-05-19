@@ -7,10 +7,9 @@ from utils.db_utils import fetch_data
 import math
 from dash import dash_table
 import json
-import dash_leaflet as dl
-import dash_leaflet.express as dlx # For categorical_colorbar and potentially assign
 import os
 import plotly.express as px # <--- 新增 Plotly Express
+import copy # For deepcopying GeoJSON
 
 # --- Register Page ---
 dash.register_page(
@@ -82,16 +81,17 @@ else: # Fallback if POSSIBLE_SELECTABLE_COLUMNS is not defined or empty
 # A simpler way if running from project root: GEOJSON_PATH = "data/zcta_ca_simplify.json"
 
 # Assuming the script is run from the project root (where app.py is)
-GEOJSON_FILE_PATH = os.path.join("data", "zcta_ca_simplify.json")
-geojson_data_ca_zcta = None
+# --- 加载 全国 ZCTA GeoJSON 数据 ---
+GEOJSON_US_FILE_PATH = os.path.join("data", "zcta_us_simplify.json") # 新的GeoJSON文件路径
+geojson_us_data = None # 重命名变量以区分
 try:
-    with open(GEOJSON_FILE_PATH, 'r') as f:
-        geojson_data_ca_zcta = json.load(f)
-    # print("GeoJSON loaded successfully.")
+    with open(GEOJSON_US_FILE_PATH, 'r') as f:
+        geojson_us_data = json.load(f)
+    print("US ZCTA GeoJSON loaded successfully.")
 except FileNotFoundError:
-    print(f"ERROR: GeoJSON file not found at '{os.path.abspath(GEOJSON_FILE_PATH)}'. Please check the path.")
+    print(f"ERROR: US ZCTA GeoJSON file not found at '{os.path.abspath(GEOJSON_US_FILE_PATH)}'.")
 except json.JSONDecodeError:
-    print(f"ERROR: Could not decode GeoJSON file from '{GEOJSON_FILE_PATH}'. Check file content.")
+    print(f"ERROR: Could not decode US ZCTA GeoJSON file from '{GEOJSON_US_FILE_PATH}'.")
 
 
 
@@ -162,6 +162,66 @@ def layout():
         ])
     ], className="mb-4")
 
+    # --- New Filter Card for Map Tab ---
+    map_filters_card = dbc.Card([
+        dbc.CardHeader("Configure Map View"),
+        dbc.CardBody([
+            dbc.Row([
+                dbc.Col([
+                    dbc.Label("Year:", html_for="map-year-dropdown"),
+                    dcc.Dropdown(id='map-year-dropdown', clearable=False, placeholder="Select Year") # Options populated by callback
+                ], md=6, lg=3, className="mb-2 mb-lg-0"),
+                dbc.Col([
+                    dbc.Label("Variable:", html_for="acs-map-variable-dropdown"),
+                    dcc.Dropdown(
+                        id='acs-map-variable-dropdown', # Existing ID
+                        options=MAP_VARIABLE_OPTIONS,
+                        value=DEFAULT_MAP_VARIABLE,
+                        clearable=False
+                    )
+                ], md=6, lg=3, className="mb-2 mb-lg-0"),
+                dbc.Col([
+                    dbc.Label("State(s):", html_for="map-state-dropdown"),
+                    dcc.Dropdown(id='map-state-dropdown', multi=True, placeholder="Select State(s)") # Options populated
+                ], md=6, lg=3, className="mb-2 mb-lg-0"),
+                dbc.Col([
+                    dbc.Label("County(ies):", html_for="map-county-dropdown"),
+                    dcc.Dropdown(id='map-county-dropdown', multi=True, placeholder="Select County(ies)") # Options populated (cascading)
+                ], md=6, lg=3, className="mb-2 mb-lg-0"),
+            ], className="mb-3 align-items-end"), # align-items-end for button
+            dbc.Button("Update Map & Stats", id="map-update-button", className="custom-gradient-button w-100", )
+        ])
+    ], className="mb-3")
+
+    
+    # --- 新增：趋势分析标签页的筛选卡片 ---
+    trend_filters_card = dbc.Card([
+        dbc.CardHeader("Configure Trend Analysis"),
+        dbc.CardBody([
+            dbc.Row([
+                dbc.Col([
+                    dbc.Label("Select Variable(s) (Max 3):", html_for="trend-variable-dropdown"),
+                    dcc.Dropdown(
+                        id='trend-variable-dropdown',
+                        options=MAP_VARIABLE_OPTIONS, # 复用地图的变量选项
+                        # value=[DEFAULT_MAP_VARIABLE] if DEFAULT_MAP_VARIABLE else [], # 初始选择一个或不选
+                        multi=True,
+                        placeholder="Select up to 3 variables..."
+                    )
+                ], width=12, md=6, className="mb-2"), # 占据更多宽度
+                dbc.Col([
+                    dbc.Label("State(s):", html_for="trend-state-dropdown"),
+                    dcc.Dropdown(id='trend-state-dropdown', multi=True, placeholder="Select State(s) (Optional)")
+                ], width=12, md=3, className="mb-2"),
+                dbc.Col([
+                    dbc.Label("County(ies):", html_for="trend-county-dropdown"),
+                    dcc.Dropdown(id='trend-county-dropdown', multi=True, placeholder="Select County(ies) (Optional)")
+                ], width=12, md=3, className="mb-2"),
+            ], className="align-items-end mb-3"),
+            dbc.Button("Update Trend Charts", id="trend-update-button", className="custom-gradient-button w-100")
+        ])
+    ], className="mb-3")
+
     tabs_component = dbc.Tabs(
         [
             dbc.Tab(label="Data Table", tab_id="acs-tab-data-table", children=[
@@ -204,50 +264,20 @@ def layout():
                 ]))
             ]),
             dbc.Tab(label="Map Visualization", tab_id="acs-tab-map-viz", children=[
-                # dbc.Card(dbc.CardBody([ # 确保内容用Card包裹
-                #     map_selection_card,
-                #     html.Hr(),
-                #     dbc.Spinner(html.Div(id='acs-map-container')) # Plotly Graph 将加载到这里
-                # ]))
                 dbc.Card(dbc.CardBody([
-                    # --- 新增：变量选择下拉菜单 ---
-                    dbc.Row([
-                        dbc.Col(dbc.Label("Select Variable:", html_for="acs-map-variable-dropdown"), width="auto", className="me-2 align-self-center"),
-                        dbc.Col(
-                            dcc.Dropdown(
-                                id='acs-map-variable-dropdown',
-                                options=MAP_VARIABLE_OPTIONS,
-                                value=DEFAULT_MAP_VARIABLE,
-                                clearable=False,
-                                # style={'width': '100%'} # dcc.Dropdown 默认为块级，宽度由Col控制
-                            ),
-                            sm=12, md=8, lg=6, xl=4 # 控制下拉菜单的响应式宽度
-                        ),
-
-                    ], className="mb-3", align="center"), # mb-3 在下拉菜单和地图之间创建一些间距
-
-                    dbc.Spinner(html.Div(id='acs-map-container')), # Plotly Graph 将加载到这里
-
-                    html.Hr(className="my-4"), # 在地图和新表格之间添加一个分隔线
-
-                    # --- 新增：显示数据分布的卡片和表格 ---
-                    dbc.Card([
-                        dbc.CardHeader(id='map-data-table-header', className="fw-bold"), # 表格标题将动态更新
-                        dbc.CardBody(
-                            dbc.Spinner(
-                                html.Div(
-                                    id='map-variable-data-table-container',
-                                    # 为表格内容区域设置最大高度和滚动条
-                                    style={"maxHeight": "450px", "overflowY": "auto"}
-                                )
-                            )
-                        )
-                    ], className="mt-3") # 卡片顶部加一些外边距
+                    map_filters_card, # Add the new filter card here
+                    dbc.Spinner(html.Div(id='acs-map-container')), # Map Graph
+                    html.Hr(className="my-4"),
+                    dbc.Card([ # Card for statistics
+                        dbc.CardHeader(id='map-stats-header', className="fw-bold"),
+                        dbc.CardBody(dbc.Spinner(html.Div(id='map-stats-plots-container')))
+                    ], className="mt-3")
                 ]))
             ]),
             dbc.Tab(label="Trend Analysis", tab_id="acs-tab-trend-analysis", children=[
                 dbc.Card(dbc.CardBody([
-                     html.P("Trend analysis placeholder. Implement charts here.")
+                    trend_filters_card, # 添加趋势分析的筛选卡片
+                    dbc.Spinner(html.Div(id='trend-charts-container', className="mt-3")) # 图表将加载到这里
                 ]))
             ]),
         ],
@@ -261,6 +291,16 @@ def layout():
             dcc.Store(id='acs-selected-columns-store', data=DEFAULT_SELECTED_COLUMNS),
             # applied-filters-store 的初始值需要更新，将 'cities' 键改为 'counties'
             dcc.Store(id='applied-filters-store', data={'years': [], 'states': [], 'counties': []}),
+            dcc.Store(id='map-applied-filters-store', data={
+                'year': None, # Or latest year by default
+                'states': [],
+                'counties': [],
+                'variable': DEFAULT_MAP_VARIABLE
+            }),
+            # 新增Store存储趋势分析的筛选条件和结果 (可选，或直接在回调中处理)
+            dcc.Store(id='trend-applied-filters-store', data={
+                'variables': [], 'states': [], 'counties': []
+            }),
             tabs_component
         ],
         fluid=True,
@@ -444,14 +484,14 @@ def update_datatable_data(active_tab_id, page_current, page_size, sort_by,
         return [], 1, datatable_columns
 
     current_filters = applied_filters if applied_filters else {}
-    print(f"DEBUG: Applied filters received by DataTable callback: {current_filters}") # 打印应用的筛选器
+    # print(f"DEBUG: Applied filters received by DataTable callback: {current_filters}") # 打印应用的筛选器
     # 构建 WHERE 子句
     where_clause = build_where_clause(applied_filters if applied_filters else {})
 
     # 1. 获取总行数 (基于筛选条件)
     count_query = f"SELECT COUNT(*) FROM public.acs_data_all WHERE {where_clause};"
 
-    print(f"DEBUG: DataTable COUNT Query SQL: {count_query}") # <--- 打印COUNT查询
+    # print(f"DEBUG: DataTable COUNT Query SQL: {count_query}") # <--- 打印COUNT查询
 
     df_count = fetch_data(count_query)
     # ... (处理 df_count 为空或 total_rows 为0的情况，与之前类似) ...
@@ -480,7 +520,7 @@ def update_datatable_data(active_tab_id, page_current, page_size, sort_by,
         {order_by_clause}
         LIMIT {page_size} OFFSET {offset};
     """
-    print(f"DEBUG: DataTable DATA Query SQL: {data_query}") # <--- 打印数据获取查询
+    # print(f"DEBUG: DataTable DATA Query SQL: {data_query}") # <--- 打印数据获取查询
     df_page_data = fetch_data(data_query)
     # ... (处理 df_page_data 和返回 data_for_datatable, page_count, datatable_columns) ...
     data_for_datatable = df_page_data.to_dict('records') if df_page_data is not None and not df_page_data.empty else []
@@ -518,145 +558,505 @@ def download_acs_dataset(n_clicks, selected_columns_for_download, applied_filter
 
     return dcc.send_data_frame(df_all_data.to_csv, f"acs_filtered_data.csv", index=False)
 
+# Populate Year dropdown for Map
+@callback(
+    [Output('map-year-dropdown', 'options'),
+     Output('map-year-dropdown', 'value')],
+    [Input('acs-page-tabs', 'active_tab')] # Trigger when map tab might become visible
+)
+def populate_map_year_dropdown(active_tab):
+    if active_tab == "acs-tab-map-viz": # Only populate if relevant tab is active or about to be
+        try:
+            # Fetch distinct years from the new table
+            df_years = fetch_data("SELECT DISTINCT year FROM public.acs_data_all ORDER BY year DESC;")
+            if df_years is not None and not df_years.empty:
+                years = df_years['year'].tolist()
+                options = [{'label': str(y), 'value': y} for y in years]
+                default_year = years[0] if years else None # Default to latest year
+                return options, default_year
+        except Exception as e:
+            print(f"Error populating map year filter: {e}")
+    return [], None
 
+# Populate State dropdown for Map (similar to data table state dropdown but new ID)
+@callback(
+    Output('map-state-dropdown', 'options'),
+    [Input('acs-page-tabs', 'active_tab')]
+)
+def populate_map_state_dropdown(active_tab):
+    if active_tab == "acs-tab-map-viz":
+        try:
+            df_states = fetch_data("SELECT DISTINCT state FROM public.acs_data_all WHERE state IS NOT NULL ORDER BY state;")
+            if df_states is not None and not df_states.empty:
+                return [{'label': str(s), 'value': str(s)} for s in df_states['state']]
+        except Exception as e:
+            print(f"Error populating map state filter: {e}")
+    return []
+
+# Populate County dropdown for Map (cascading based on selected states)
+@callback(
+    [Output('map-county-dropdown', 'options'),
+     Output('map-county-dropdown', 'value')], # Reset value when states change
+    [Input('map-state-dropdown', 'value')],
+    [State('acs-page-tabs', 'active_tab')]
+)
+def populate_map_county_dropdown(selected_states, active_tab):
+    if active_tab != "acs-tab-map-viz" or not selected_states:
+        return [], [] # No states selected, or tab not active, so no county options / clear selection
+
+    try:
+        # Ensure selected_states is a list of strings, suitable for SQL IN clause
+        safe_states_sql_tuple = "('" + "', '".join([str(s).replace("'", "''") for s in selected_states]) + "')"
+        query = f"SELECT DISTINCT county FROM public.acs_data_all WHERE county IS NOT NULL AND state IN {safe_states_sql_tuple} ORDER BY county LIMIT 1000;"
+        
+        df_counties = fetch_data(query)
+        if df_counties is not None and not df_counties.empty:
+            options = [{'label': str(c), 'value': str(c)} for c in df_counties['county']]
+            return options, [] # Return options and reset selected counties
+    except Exception as e:
+        print(f"Error populating map county filter: {e}")
+    return [], []
+
+# This callback will read all map filter values and store them.
+@callback(
+    Output('map-applied-filters-store', 'data'),
+    [Input('map-update-button', 'n_clicks')],
+    [State('map-year-dropdown', 'value'),
+     State('acs-map-variable-dropdown', 'value'), # Existing variable dropdown
+     State('map-state-dropdown', 'value'),
+     State('map-county-dropdown', 'value')],
+    prevent_initial_call=True # Only run on button click
+)
+def store_map_filters_on_apply(n_clicks, year, variable, states, counties):
+    if not n_clicks:
+        return dash.no_update
+
+    filters = {
+        'year': year,
+        'variable': variable,
+        'states': states if states else [],
+        'counties': counties if counties else []
+    }
+    return filters
+
+
+# 计算 center zoom level
+def calculate_map_view_from_geojson(geojson_features):
+    """
+    根据 GeoJSON feature 列表计算地图的中心点和合适的缩放级别。
+    """
+    if not geojson_features: # 如果没有地理特征，返回美国大陆的默认视图
+        return {"lat": 39.8283, "lon": -98.5795}, 3
+
+    all_lons = []
+    all_lats = []
+
+    def extract_coords_from_geometry(geometry):
+        geom_type = geometry['type']
+        coords = geometry['coordinates']
+        if geom_type == 'Polygon':
+            # coords 是环的列表，第一个环是外环
+            for lon, lat in coords[0]:
+                all_lons.append(lon)
+                all_lats.append(lat)
+        elif geom_type == 'MultiPolygon':
+            # coords 是多边形列表，每个多边形又包含环的列表
+            for polygon in coords:
+                if polygon and polygon[0]: # 确保多边形和外环存在
+                    for lon, lat in polygon[0]:
+                        all_lons.append(lon)
+                        all_lats.append(lat)
+        # 可以根据需要添加对 Point, LineString 等其他几何类型的处理
+
+    for feature in geojson_features:
+        if 'geometry' in feature and feature['geometry']:
+            extract_coords_from_geometry(feature['geometry'])
+    
+    if not all_lons or not all_lats: # 如果无法提取任何坐标
+        return {"lat": 39.8283, "lon": -98.5795}, 3
+
+    min_lon, max_lon = min(all_lons), max(all_lons)
+    min_lat, max_lat = min(all_lats), max(all_lats)
+
+    center_lon = (min_lon + max_lon) / 2
+    center_lat = (min_lat + max_lat) / 2
+    map_center = {"lat": center_lat, "lon": center_lon}
+
+    # --- 估算缩放级别 (这是一个启发式方法，可能需要调整) ---
+    delta_lon = max_lon - min_lon
+    delta_lat = max_lat - min_lat
+
+    # 如果边界框非常小（例如单个点或非常小的区域），设置一个较高的默认缩放级别
+    if delta_lon < 0.001 and delta_lat < 0.001: # 阈值可以调整
+        map_zoom = 12
+    else:
+        # 根据边界框的最大跨度（经度或纬度）估算
+        # Mapbox的缩放级别大致遵循：zoom N 覆盖的世界宽度约为 360 / (2^N) 度
+        # 反过来，zoom ≈ log2(360 / span_degrees) - C (C是一个调整常数)
+        # 一个更简单的经验公式：
+        max_span = max(delta_lon, delta_lat)
+        if max_span <= 0: # 理论上不应发生，除非只有一个点且delta计算为0
+            map_zoom = 12
+        else:
+            # 这个常数9需要根据您的数据和期望的“紧凑度”进行调整
+            # 值越大，对于给定的span，地图会越放大
+            map_zoom = math.floor(9 - math.log2(max_span))
+            map_zoom = max(0, min(map_zoom, 18)) # 将缩放级别限制在合理范围内 (0-22)
+    
+    # print(f"Calculated View: Center={map_center}, Zoom={map_zoom}, SpanLon={delta_lon}, SpanLat={delta_lat}")
+    return map_center, map_zoom
 
 # 回调5: 更新地图 (监听标签页激活)
-
 @callback(
-    [Output('acs-map-container', 'children'),           # 地图组件
-     Output('map-variable-data-table-container', 'children'), # 新：统计图组件
-     Output('map-data-table-header', 'children')],      # 新：统计卡片的标题
+    [Output('acs-map-container', 'children'),
+     Output('map-stats-plots-container', 'children'),
+     Output('map-stats-header', 'children')],
     [Input('acs-page-tabs', 'active_tab'),
-     Input('acs-map-variable-dropdown', 'value')]
+     Input('map-applied-filters-store', 'data')] # 监听存储的筛选条件
 )
-def render_map_visualization_tab(active_tab_id, selected_variable):
+def render_map_and_stats(active_tab_id, applied_filters):
+    ctx = dash.callback_context
+    triggered_input_id = ctx.triggered[0]['prop_id'].split('.')[0] if ctx.triggered else None
+
     if active_tab_id != "acs-tab-map-viz":
         return dash.no_update, dash.no_update, dash.no_update
 
-    # --- 默认返回值 ---
-    empty_map_return = dbc.Alert("Map could not be generated.", color="info", className="m-4")
-    empty_stats_return = html.Div("No data available for statistical plots.", className="text-center text-muted p-3")
+    # 初始提示信息
+    map_placeholder = html.Div([
+        html.P("Please select Year and Variable, then optionally State(s) and County(ies)."),
+        html.P("Click 'Update Map & Stats' to view the visualization.")
+    ], className="text-center p-4 text-muted mt-4")
+    stats_placeholder = html.P("Statistics will appear here once the map is updated.", className="text-center text-muted p-3")
     default_stats_header = "Variable Statistics"
 
-    if not selected_variable: # 处理 selected_variable 可能为空的情况
-        selected_variable = DEFAULT_MAP_VARIABLE # 假定 DEFAULT_MAP_VARIABLE 已定义
-    if not selected_variable or selected_variable not in POSSIBLE_SELECTABLE_COLUMNS:
-        alert_msg = dbc.Alert(f"Invalid map variable '{selected_variable}' selected.", color="danger")
-        return alert_msg, empty_stats_return, default_stats_header
-    
-    # --- Mapbox Token, GeoJSON 加载, 数据获取和准备 (与您之前的代码一致) ---
+    # 检查 applied_filters 是否已由按钮有效填充
+    # 如果是首次加载标签页，且 store 内容是初始默认值，则显示提示
+    if not applied_filters or not applied_filters.get('year') or not applied_filters.get('variable'):
+        # 如果触发的不是 store 的更新（例如，是标签页切换），并且基本筛选不全
+        if triggered_input_id != 'map-applied-filters-store':
+            return map_placeholder, stats_placeholder, default_stats_header
+        # 如果是 store 更新了，但年份或变量仍然缺失（理论上按钮回调会保证它们有值）
+        elif not applied_filters.get('year') or not applied_filters.get('variable'):
+             return (dbc.Alert("Year and Variable selections are required. Please make your selections and click 'Update Map & Stats'.", color="warning", className="m-4"),
+                    stats_placeholder, default_stats_header)
+
+
+    selected_year = applied_filters.get('year')
+    selected_variable = applied_filters.get('variable')
+    selected_states = applied_filters.get('states', [])   # 默认为空列表
+    selected_counties = applied_filters.get('counties', []) # 默认为空列表
+
+    # 再次确认核心筛选条件是否存在
+    if not selected_year or not selected_variable:
+        # 这个情况理论上会被上面的逻辑捕获，但作为双重保险
+        return map_placeholder, stats_placeholder, default_stats_header
+
+
+    # --- Mapbox Token 和 GeoJSON 检查 (保持不变) ---
     mapbox_access_token = os.getenv("MAPBOX_ACCESS_TOKEN")
-    # mapbox_access_token = "pk.YOURTOKEN" # 本地测试
-    if not mapbox_access_token or mapbox_access_token == "pk.YOURTOKEN": # 请替换
-        alert_msg = dbc.Alert(
-            [html.H5("Mapbox Access Token缺失", className="alert-heading"), html.P(["无法加载地图..."])],
-            color="danger", className="m-4"
-        )
-        return alert_msg, empty_stats_return, default_stats_header
+    # mapbox_access_token = "pk.YOURTOKEN" # for local testing
+    if not mapbox_access_token or mapbox_access_token == "pk.YOURTOKEN": # 请替换占位符
+        alert_msg = dbc.Alert([html.H5("Mapbox Access Token缺失", className="alert-heading"), html.P(["无法加载地图..."])], color="danger", className="m-4")
+        return alert_msg, stats_placeholder, default_stats_header
+    if geojson_us_data is None:
+        alert_msg = dbc.Alert("US GeoJSON data failed to load.", color="danger", className="m-4")
+        return alert_msg, stats_placeholder, default_stats_header
 
-    if geojson_data_ca_zcta is None: # 假定 geojson_data_ca_zcta 在全局加载
-        alert_msg = dbc.Alert("GeoJSON map data failed to load.", color="danger", className="m-4")
-        return alert_msg, empty_stats_return, default_stats_header
-
+    # --- 构建动态SQL的WHERE子句 ---
+    # 确保 selected_variable 是有效的，并且在SQL中安全使用
+    if selected_variable not in POSSIBLE_SELECTABLE_COLUMNS: # (确保POSSIBLE_SELECTABLE_COLUMNS已正确定义)
+        return dbc.Alert(f"Invalid variable selected: {selected_variable}", color="danger"), stats_placeholder, default_stats_header
+    
     safe_sql_variable_name = f'"{selected_variable}"'
+    where_conditions = [f"\"year\" = {int(selected_year)}", f"{safe_sql_variable_name} IS NOT NULL"]
+
+    if selected_states: # 只有当用户选择了州时，才添加州筛选
+        safe_states_sql = "('" + "', '".join([str(s).replace("'", "''") for s in selected_states]) + "')"
+        where_conditions.append(f"\"state\" IN {safe_states_sql}")
+        
+        if selected_counties: # 只有当用户选择了州 *并且* 选择了县时，才添加县筛选
+            safe_counties_sql = "('" + "', '".join([str(c).replace("'", "''") for c in selected_counties]) + "')"
+            where_conditions.append(f"\"county\" IN {safe_counties_sql}")
+    
+    where_clause_sql = " AND ".join(where_conditions)
+
+    # 获取数据
     query = f"""
-        WITH LatestYearData AS (
-            SELECT zipcode, {safe_sql_variable_name} AS "value_to_map", state,
-                   ROW_NUMBER() OVER(PARTITION BY zipcode ORDER BY year DESC) as rn
-            FROM public.acs_data
-            WHERE {safe_sql_variable_name} IS NOT NULL AND state = '6'
-        )
-        SELECT zipcode, "value_to_map" FROM LatestYearData WHERE rn = 1;
+        SELECT zipcode, {safe_sql_variable_name} AS "value_to_map"
+        FROM public.acs_data_all  -- 确保表名是 acs_data_all
+        WHERE {where_clause_sql};
     """
     df_map_data = fetch_data(query)
 
-    selected_variable_label = selected_variable.replace('_',' ').title()
-    if 'MAP_VARIABLE_OPTIONS' in globals(): # 确保 MAP_VARIABLE_OPTIONS 已定义
-        for opt in MAP_VARIABLE_OPTIONS:
-            if opt['value'] == selected_variable:
-                selected_variable_label = opt['label']
-                break
-    
-    stats_header_text = f"Statistics for: {selected_variable_label}" # 动态统计卡片标题
+    selected_variable_label = next((opt['label'] for opt in MAP_VARIABLE_OPTIONS if opt['value'] == selected_variable), selected_variable.replace('_',' ').title())
+    current_stats_header = f"Statistics for: {selected_variable_label} ({selected_year})"
+    if selected_states:
+        current_stats_header += f" in State(s): {', '.join(selected_states)}"
+    if selected_counties:
+         current_stats_header += f", County(ies): {', '.join(selected_counties)}"
+
 
     if df_map_data is None or df_map_data.empty:
-        alert_msg = dbc.Alert(f"No data found for '{selected_variable_label}' to display.", color="warning", className="m-4")
-        return alert_msg, empty_stats_return, stats_header_text
-
+        msg = f"No data found for '{selected_variable_label}' with the current filters (Year: {selected_year}"
+        if selected_states: msg += f", States: {', '.join(selected_states)}"
+        if selected_counties: msg += f", Counties: {', '.join(selected_counties)}"
+        msg += ")."
+        return dbc.Alert(msg, color="warning"), html.P(msg, className="text-center text-muted p-3"), current_stats_header
+    
+    # --- 数据准备和GeoJSON过滤 (与之前类似) ---
     df_map_data['zipcode'] = df_map_data['zipcode'].astype(str)
     df_map_data['value_to_map'] = pd.to_numeric(df_map_data['value_to_map'], errors='coerce')
     df_map_data.dropna(subset=['value_to_map'], inplace=True)
 
-    if df_map_data.empty:
-        alert_msg = dbc.Alert(f"No valid data for '{selected_variable_label}' after cleaning.", color="warning", className="m-4")
-        return alert_msg, empty_stats_return, stats_header_text
+    if df_map_data.empty: # 清理后再次检查
+        msg = f"No valid (numeric) data for '{selected_variable_label}' after cleaning for year {selected_year} and other filters."
+        return dbc.Alert(msg, color="warning"), html.P(msg, className="text-center text-muted p-3"), current_stats_header
+        
+    filtered_geojson_features = []
+    zctas_in_data = set(df_map_data['zipcode'])
+    if geojson_us_data and 'features' in geojson_us_data:
+        for feature in geojson_us_data['features']:
+            if str(feature['properties'].get('ZCTA5CE20')) in zctas_in_data:
+                filtered_geojson_features.append(feature)
+    
+    current_display_geojson = {"type": "FeatureCollection", "features": filtered_geojson_features}
 
-    # --- 创建Choropleth Mapbox图形 (与您之前的代码一致) ---
-    map_graph_component = empty_map_return # Default
+    if not filtered_geojson_features:
+        return dbc.Alert("No geographical ZCTA shapes match the filtered data. Ensure GeoJSON 'ZCTA5CE20' property aligns with 'zipcode' data.", color="info"), \
+               html.P("No shapes to display.", className="text-center text-muted p-3"), current_stats_header
+
+    # --- 创建Choropleth Mapbox图形 ---
+    # ... (与您之前创建 fig_map 的代码一致, 使用 current_display_geojson, df_map_data)
+    # ... (hover_data_format_str 逻辑)
+    hover_data_format_str = ':.1f'
+    if "pct_" in selected_variable: hover_data_format_str = ':.1f}%'
+    elif "income" in selected_variable or "median_income" in selected_variable: hover_data_format_str = '$,.0f'
+    elif selected_variable in ["population", "year"]: hover_data_format_str = ',.0f'
+
+    # --- 计算地图的中心点和缩放级别 ---
+    map_center_calc, map_zoom_calc = calculate_map_view_from_geojson(current_display_geojson.get("features", []))
+
+
+    map_graph_component = html.Div("Error creating map.")
     try:
-        hover_data_format_str = ':.1f'
-        if "pct_" in selected_variable: hover_data_format_str = ':.1f}%'
-        elif "income" in selected_variable or "median_income" in selected_variable: hover_data_format_str = '$,.0f'
-        elif selected_variable in ["population", "year"]: hover_data_format_str = ',.0f'
-
         fig_map = px.choropleth_mapbox(
-            df_map_data, geojson=geojson_data_ca_zcta, locations='zipcode',
+            df_map_data, geojson=current_display_geojson, locations='zipcode',
             featureidkey='properties.ZCTA5CE20', color='value_to_map',
-            color_continuous_scale="YlOrRd", mapbox_style="light",
-            zoom=5.2, center={"lat": 37.2, "lon": -119.5}, opacity=0.7,
+            color_continuous_scale="YlOrRd",
+            mapbox_style="light",
+            # 当显示全国数据时，移除固定的 center 和 zoom，让 mapbox_autofitbounds 工作
+            # center 和 zoom 可以在没有州选择时设为美国中心，或完全依赖 autofit
+            # zoom= (3.5 if not selected_states else 5.5), 
+            # center= ({"lat": 39.8283, "lon": -98.5795} if not selected_states else None), # None 会让autofit生效
+            opacity=0.7,
             labels={'value_to_map': selected_variable_label},
             hover_name='zipcode',
             hover_data={'value_to_map': hover_data_format_str, 'zipcode': False}
         )
         fig_map.update_layout(
-            margin={"r":5,"t":5,"l":5,"b":5}, mapbox_accesstoken=mapbox_access_token,
+            margin={"r":5,"t":5,"l":5,"b":5},
+            mapbox_accesstoken=mapbox_access_token,
+            mapbox={
+                'center': map_center_calc, # 美国中心点
+                'zoom': map_zoom_calc # 概览缩放级别
+            },
+            # mapbox_autofitbounds="locations", # 关键：让地图自动适应有数据的位置
             coloraxis_colorbar_title_text=selected_variable_label
         )
-        map_graph_component = dcc.Graph(figure=fig_map, style={'width': '100%', 'height': '70vh'})
+        map_graph_component = dcc.Graph(figure=fig_map, style={'width': '100%', 'height': '65vh'})
     except Exception as e:
-        print(f"Error creating choropleth_mapbox for variable {selected_variable}: {e}")
         map_graph_component = dbc.Alert(f"Error creating map: {str(e)}", color="danger")
-        # 如果地图创建失败，也返回空的统计图和对应的标题
-        return map_graph_component, empty_stats_return, stats_header_text
-
-    # --- 创建统计图 ---
-    stats_plots_component = empty_stats_return # Default
-    if not df_map_data.empty: # 再次确认，因为dropna可能使其变空
+        return map_graph_component, stats_placeholder, current_stats_header
+        
+    # --- 创建统计图 (与之前一致, 使用筛选后的 df_map_data) ---
+    stats_plots_component = html.Div("Error generating stats or no data for stats.")
+    if not df_map_data.empty: # 确保有数据来绘制统计图
         try:
-            # 1. 直方图 (Histogram)
-            fig_hist = px.histogram(
-                df_map_data,
-                x="value_to_map",
-                labels={'value_to_map': ''}, # X轴标签可以留空或设为变量名
-                nbins=30, # 可根据数据调整
-                marginal="rug" # 可选，在边缘显示数据点
-            )
-            fig_hist.update_layout(
-                title_text=f"Distribution (Histogram)", title_x=0.5, title_font_size=15,
-                margin=dict(t=40, b=20, l=20, r=20), # 紧凑边距
-                bargap=0.1,
-                yaxis_title="Frequency"
-            )
-
-            # 2. 箱线图 (Box Plot)
-            fig_box = px.box(
-                df_map_data,
-                y="value_to_map",
-                points="outliers", # "all", False, "outliers"
-                notched=True, # 可选
-                labels={'value_to_map': ''} # Y轴标签可以留空
-            )
-            fig_box.update_layout(
-                title_text=f"Distribution (Box Plot)", title_x=0.5, title_font_size=15,
-                margin=dict(t=40, b=20, l=20, r=20) # 紧凑边距
-            )
-
+            fig_hist = px.histogram(df_map_data, x="value_to_map", labels={'value_to_map': ''}, nbins=30, marginal="rug")
+            fig_hist.update_layout(title_text="Distribution (Histogram)", title_x=0.5, title_font_size=15, margin=dict(t=40, b=20, l=20, r=20), bargap=0.1, yaxis_title="Frequency")
+            
+            fig_box = px.box(df_map_data, y="value_to_map", points="outliers", notched=True, labels={'value_to_map': ''})
+            fig_box.update_layout(title_text="Distribution (Box Plot)", title_x=0.5, title_font_size=15, margin=dict(t=40, b=20, l=20, r=20))
+            
             stats_plots_component = dbc.Row([
                 dbc.Col(dcc.Graph(figure=fig_hist, config={'displayModeBar': False}), md=6),
                 dbc.Col(dcc.Graph(figure=fig_box, config={'displayModeBar': False}), md=6)
             ])
         except Exception as e:
-            print(f"Error creating statistical plots for {selected_variable}: {e}")
             stats_plots_component = dbc.Alert(f"Error generating statistics plots: {str(e)}", color="warning")
 
-    return map_graph_component, stats_plots_component, stats_header_text
+    return map_graph_component, stats_plots_component, current_stats_header
+
+
+# -------------  Trend Analysis Tab的回调 --------------
+# 填充趋势分析的州下拉菜单
+@callback(
+    Output('trend-state-dropdown', 'options'),
+    [Input('acs-page-tabs', 'active_tab')]
+)
+def populate_trend_state_dropdown(active_tab):
+    if active_tab == "acs-tab-trend-analysis": # 仅当趋势分析标签页激活时
+        try:
+            # SQL查询与地图部分相同
+            df_states = fetch_data("SELECT DISTINCT state FROM public.acs_data_all WHERE state IS NOT NULL ORDER BY state;")
+            if df_states is not None and not df_states.empty:
+                return [{'label': str(s), 'value': str(s)} for s in df_states['state']]
+        except Exception as e:
+            print(f"Error populating trend state filter: {e}")
+    return []
+
+# 填充趋势分析的县下拉菜单 (级联)
+@callback(
+    [Output('trend-county-dropdown', 'options'),
+     Output('trend-county-dropdown', 'value')],
+    [Input('trend-state-dropdown', 'value')],
+    [State('acs-page-tabs', 'active_tab')]
+)
+def populate_trend_county_dropdown(selected_states, active_tab):
+    if active_tab != "acs-tab-trend-analysis" or not selected_states:
+        return [], []
+
+    try:
+        safe_states_sql = "('" + "', '".join([str(s).replace("'", "''") for s in selected_states]) + "')"
+        query = f"SELECT DISTINCT county FROM public.acs_data_all WHERE county IS NOT NULL AND state IN {safe_states_sql} ORDER BY county LIMIT 1000;"
+        df_counties = fetch_data(query)
+        if df_counties is not None and not df_counties.empty:
+            options = [{'label': str(c), 'value': str(c)} for c in df_counties['county']]
+            return options, []
+    except Exception as e:
+        print(f"Error populating trend county filter: {e}")
+    return [], []
+
+
+@callback(
+    Output('trend-applied-filters-store', 'data'),
+    [Input('trend-update-button', 'n_clicks')],
+    [State('trend-variable-dropdown', 'value'),
+     State('trend-state-dropdown', 'value'),
+     State('trend-county-dropdown', 'value')],
+    prevent_initial_call=True
+)
+def store_trend_filters_on_apply(n_clicks, selected_variables, selected_states, selected_counties):
+    if not n_clicks:
+        return dash.no_update
+
+    # 限制最多选择3个变量
+    if selected_variables and len(selected_variables) > 3:
+        selected_variables = selected_variables[:3] # 只取前三个
+
+    filters = {
+        'variables': selected_variables if selected_variables else [],
+        'states': selected_states if selected_states else [],
+        'counties': selected_counties if selected_counties else []
+    }
+    return filters
+
+# 渲染趋势分析图表
+
+@callback(
+    Output('trend-charts-container', 'children'),
+    [Input('acs-page-tabs', 'active_tab'),
+     Input('trend-applied-filters-store', 'data')]
+)
+def render_trend_analysis_charts(active_tab_id, applied_filters):
+    ctx = dash.callback_context
+    triggered_input_id = ctx.triggered[0]['prop_id'].split('.')[0] if ctx.triggered else None
+
+    if active_tab_id != "acs-tab-trend-analysis":
+        return dash.no_update
+
+    placeholder_message = html.P(
+        "Please select variable(s) (up to 3) and optional state/county filters, then click 'Update Trend Charts'.",
+        className="text-center text-muted mt-4"
+    )
+
+    if not applied_filters or not applied_filters.get('variables'):
+        if triggered_input_id != 'trend-applied-filters-store': # 标签页切换且无有效筛选
+            return placeholder_message
+        elif not applied_filters.get('variables'): # "Update"被点击但变量为空
+            return dbc.Alert("Please select at least one variable for trend analysis.", color="warning", className="m-3")
+
+    selected_variables = applied_filters.get('variables', [])
+    selected_states = applied_filters.get('states', [])
+    selected_counties = applied_filters.get('counties', [])
+
+    if not selected_variables: # 双重检查
+        return dbc.Alert("No variables selected for trend analysis.", color="warning", className="m-3")
+
+    # --- 构建基础WHERE子句 (不包含年份，因为我们要看所有年份的趋势) ---
+    base_where_conditions = ["1=1"] # 开始
+    if selected_states:
+        safe_states_sql = "('" + "', '".join([str(s).replace("'", "''") for s in selected_states]) + "')"
+        base_where_conditions.append(f"\"state\" IN {safe_states_sql}")
+        if selected_counties: # 仅当州被选择时，县的筛选才有意义
+            safe_counties_sql = "('" + "', '".join([str(c).replace("'", "''") for c in selected_counties]) + "')"
+            base_where_conditions.append(f"\"county\" IN {safe_counties_sql}")
+
+    base_where_clause_sql = " AND ".join(base_where_conditions)
+
+    charts_layout = []
+    for variable_to_plot in selected_variables:
+        if variable_to_plot not in POSSIBLE_SELECTABLE_COLUMNS: # 安全检查
+            charts_layout.append(dbc.Col(dbc.Alert(f"Invalid variable: {variable_to_plot}", color="danger"), md=12 if len(selected_variables) == 1 else (6 if len(selected_variables) == 2 else 4)))
+            continue
+
+        safe_sql_variable = f'"{variable_to_plot}"'
+
+        # SQL查询：获取选定变量和年份，根据州/县进行聚合（例如平均值）
+        # 注意：如果一个州/县内有多个zipcode，直接取平均值可能需要 GROUP BY state, county, year
+        # 为简化，如果选择了州/县，我们计算这些区域内该变量的平均值随年份的变化
+        # 如果没有选择州/县，则计算全国该变量的平均值随年份的变化
+
+        # 如果选定了地理区域，我们通常需要对这些区域内的数据进行聚合。
+        # 对于百分比数据，直接平均可能不完全准确（应该是加权平均或对分子分母求和再计算），
+        # 但作为趋势展示，简单平均值可以作为起点。
+        # 对于收入等，平均值也是一个常用指标。
+
+        aggregation_function = "AVG" # 可以根据变量类型选择 AVG, SUM, MEDIAN 等
+
+        query = f"""
+            SELECT
+                year,
+                {aggregation_function}({safe_sql_variable}) AS "trend_value"
+            FROM public.acs_data_all
+            WHERE {base_where_clause_sql} AND {safe_sql_variable} IS NOT NULL
+            GROUP BY year
+            ORDER BY year ASC;
+        """
+        df_trend_data = fetch_data(query)
+
+        variable_label = next((opt['label'] for opt in MAP_VARIABLE_OPTIONS if opt['value'] == variable_to_plot),
+                              variable_to_plot.replace('_',' ').title())
+
+        chart_title = f"Trend for: {variable_label}"
+        if selected_states:
+            chart_title += f" in {', '.join(selected_states)}"
+            if selected_counties: # 只有当州被选择时，县的筛选才有意义
+                chart_title += f" ({', '.join(selected_counties)})"
+
+
+        if df_trend_data is not None and not df_trend_data.empty:
+            fig_trend = px.line(
+                df_trend_data,
+                x="year",
+                y="trend_value",
+                title=chart_title,
+                labels={"year": "Year", "trend_value": variable_label},
+                markers=True # 在数据点上显示标记
+            )
+            fig_trend.update_layout(
+                margin=dict(t=50, b=20, l=20, r=20),
+                title_font_size=15,
+                xaxis=dict(type='category') # 将年份视为类别，以避免非整数年份的显示问题
+            )
+            # 根据选择的变量数量决定列宽
+            col_width = 12 if len(selected_variables) == 1 else (6 if len(selected_variables) == 2 else 4)
+            charts_layout.append(dbc.Col(dcc.Graph(figure=fig_trend, config={'displayModeBar': False}), md=col_width, className="mb-3"))
+        else:
+            col_width = 12 if len(selected_variables) == 1 else (6 if len(selected_variables) == 2 else 4)
+            charts_layout.append(dbc.Col(html.Div(f"No trend data available for {variable_label} with current filters."), md=col_width, className="text-muted p-3"))
+
+    if not charts_layout: # 如果因为某种原因（例如所有变量都无效）列表为空
+        return placeholder_message
+
+    return dbc.Row(charts_layout) # 将所有图表放在一个Row中，它们会自动排列
